@@ -1,7 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { View, Case, Skin, InventoryItem, Rarity, PaymentProvider } from './types';
+import { View, Case, Skin, InventoryItem, Rarity, PaymentProvider, User } from './types';
 import { CASES as INITIAL_CASES, SKINS as INITIAL_SKINS, RARITY_COLORS, BORDER_COLORS, GLOW_COLORS } from './constants';
 import Header from './components/Header';
 import CaseOpener from './components/CaseOpener';
@@ -17,9 +17,17 @@ const pageVariants = {
 };
 
 const App: React.FC = () => {
-  const [balance, setBalance] = useState<number>(0);
+  // Auth States
+  const [user, setUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('devourer_session');
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
+  const [authForm, setAuthForm] = useState({ email: '', username: '', password: '' });
+  
+  const [balance, setBalance] = useState<number>(user ? user.balance : 0);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
-  const [currentView, setView] = useState<View>('LOBBY');
+  const [currentView, setView] = useState<View>(user ? 'LOBBY' : 'AUTH');
   const [activeCase, setActiveCase] = useState<Case | null>(null);
   const [caseSessionId, setCaseSessionId] = useState(0);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
@@ -40,11 +48,47 @@ const App: React.FC = () => {
   const [skins] = useState<Skin[]>(INITIAL_SKINS);
 
   // The iconic cyberpunk mascot image URL
-  const MASCOT_URL = "https://images.unsplash.com/photo-1614728263952-84ea256f9679?q=80&w=1974&auto=format&fit=crop";
+  const MASCOT_URL = "https://image2url.com/r2/default/images/1770034854711-60d7c45b-78b0-45d4-9f36-3773406af894.jpeg";
+
+  // Sync balance to storage
+  useEffect(() => {
+    if (user) {
+      const updatedUser = { ...user, balance };
+      localStorage.setItem('devourer_session', JSON.stringify(updatedUser));
+    }
+  }, [balance, user]);
 
   const handleNavigate = (v: View) => {
+    if (!user && v !== 'AUTH') {
+      setView('AUTH');
+      return;
+    }
     sounds.playClick();
     setView(v);
+  };
+
+  const handleAuthSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    sounds.playWin();
+    
+    // Simulate auth logic
+    const newUser: User = {
+      username: authForm.username || authForm.email.split('@')[0],
+      email: authForm.email,
+      balance: authMode === 'SIGNUP' ? 50.00 : balance, // Give new users $50
+    };
+
+    setUser(newUser);
+    if (authMode === 'SIGNUP') setBalance(50.00);
+    localStorage.setItem('devourer_session', JSON.stringify(newUser));
+    setView('LOBBY');
+  };
+
+  const handleLogout = () => {
+    sounds.playTick();
+    setUser(null);
+    localStorage.removeItem('devourer_session');
+    setView('AUTH');
   };
 
   const handleOpenCase = (c: Case) => {
@@ -130,7 +174,6 @@ const App: React.FC = () => {
     setIsProcessingPayment(true);
     sounds.playClick();
     
-    // Vercel deployment: Modern Fetch is global, ensuring no node-domexception triggers
     setTimeout(() => {
       setBalance(prev => prev + paymentAmount);
       setIsProcessingPayment(false);
@@ -142,10 +185,96 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#05020a]">
-      <Header balance={balance} currentView={currentView} setView={handleNavigate} />
+      {currentView !== 'AUTH' && (
+        <Header balance={balance} currentView={currentView} setView={handleNavigate} />
+      )}
 
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-8">
         <AnimatePresence mode="wait">
+          {currentView === 'AUTH' && (
+            <motion.div 
+              key="auth"
+              variants={pageVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              className="min-h-[80vh] flex items-center justify-center p-4"
+            >
+              <div className="w-full max-w-md bg-[#1a0b2e]/90 border-2 border-pink-500/20 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(236,72,153,0.15)] backdrop-blur-xl relative overflow-hidden">
+                <div className="absolute -top-24 -right-24 w-64 h-64 bg-pink-600/10 blur-[100px] rounded-full"></div>
+                
+                <div className="text-center mb-10">
+                  <div className="w-24 h-24 mx-auto mb-6 rounded-full border-2 border-pink-500/40 p-1 overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.3)]">
+                    <img src={MASCOT_URL} className="w-full h-full object-cover" />
+                  </div>
+                  <h2 className="text-4xl font-black font-rajdhani text-white italic tracking-tighter uppercase logo-gradient">
+                    {authMode === 'LOGIN' ? 'IDENTIFY' : 'REGISTER'}
+                  </h2>
+                  <p className="text-pink-500 text-[10px] font-black tracking-[0.4em] uppercase mt-2">Neural Gateway Interface</p>
+                </div>
+
+                <form onSubmit={handleAuthSubmit} className="space-y-6">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-2">Uplink Address (Email)</label>
+                    <input 
+                      required
+                      type="email" 
+                      placeholder="user@neural.mesh"
+                      className="w-full bg-[#05020a] border border-pink-500/10 rounded-2xl p-4 text-white font-rajdhani text-xl outline-none focus:border-pink-500/50 transition-all shadow-inner"
+                      value={authForm.email}
+                      onChange={e => setAuthForm({...authForm, email: e.target.value})}
+                    />
+                  </div>
+                  
+                  {authMode === 'SIGNUP' && (
+                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
+                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-2">Handle (Username)</label>
+                      <input 
+                        required
+                        type="text" 
+                        placeholder="Operator_X"
+                        className="w-full bg-[#05020a] border border-pink-500/10 rounded-2xl p-4 text-white font-rajdhani text-xl outline-none focus:border-pink-500/50 transition-all shadow-inner"
+                        value={authForm.username}
+                        onChange={e => setAuthForm({...authForm, username: e.target.value})}
+                      />
+                    </motion.div>
+                  )}
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-2">Access Key (Password)</label>
+                    <input 
+                      required
+                      type="password" 
+                      placeholder="••••••••"
+                      className="w-full bg-[#05020a] border border-pink-500/10 rounded-2xl p-4 text-white font-rajdhani text-xl outline-none focus:border-pink-500/50 transition-all shadow-inner"
+                      value={authForm.password}
+                      onChange={e => setAuthForm({...authForm, password: e.target.value})}
+                    />
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full bg-gradient-to-r from-pink-600 to-purple-800 text-white font-black py-5 rounded-2xl uppercase tracking-[0.3em] shadow-xl hover:shadow-pink-600/40 active:scale-95 transition-all italic text-xs border-t border-white/10"
+                  >
+                    {authMode === 'LOGIN' ? 'INITIALIZE UPLINK' : 'AUTHORIZE ACCOUNT'}
+                  </button>
+                </form>
+
+                <div className="mt-8 text-center">
+                  <button 
+                    onClick={() => {
+                      sounds.playTick();
+                      setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN');
+                    }}
+                    className="text-[10px] font-black text-slate-600 hover:text-pink-500 uppercase tracking-widest transition-colors"
+                  >
+                    {authMode === 'LOGIN' ? 'Request New Identity' : 'Existing Identity Detected'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {currentView === 'LOBBY' && (
             <motion.div 
               key="lobby"
@@ -156,23 +285,29 @@ const App: React.FC = () => {
               transition={{ duration: 0.4, ease: "easeOut" }}
               className="space-y-12"
             >
-              <div className="flex items-center gap-8 border-l-4 border-pink-600 pl-6 py-4 bg-[#1a0b2e]/40 rounded-r-[2rem] shadow-2xl backdrop-blur-md">
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-pink-500 rounded-3xl blur-2xl opacity-20 group-hover:opacity-40 transition-opacity"></div>
-                  <div className="w-24 h-24 rounded-3xl border-2 border-pink-500/30 overflow-hidden shadow-2xl hidden md:block relative z-10">
-                    <img 
-                      src={MASCOT_URL} 
-                      className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110" 
-                      style={{ filter: 'hue-rotate(270deg) brightness(1.2)' }} 
-                    />
+              <div className="flex items-center justify-between border-l-4 border-pink-600 pl-6 py-4 bg-[#1a0b2e]/40 rounded-r-[2rem] shadow-2xl backdrop-blur-md">
+                <div className="flex items-center gap-8">
+                  <div className="relative group">
+                    <div className="absolute inset-0 bg-pink-500 rounded-3xl blur-2xl opacity-20 group-hover:opacity-40 transition-opacity"></div>
+                    <div className="w-24 h-24 rounded-3xl border-2 border-pink-500/30 overflow-hidden shadow-2xl hidden md:block relative z-10">
+                      <img 
+                        src={MASCOT_URL} 
+                        className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110" 
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-5xl font-black font-rajdhani text-white uppercase italic tracking-tighter drop-shadow-[0_0_15px_rgba(236,72,153,0.3)]">EXTRACTION POINT</h2>
+                    <div className="flex items-center gap-4 mt-1">
+                      <p className="text-pink-500 font-bold uppercase text-[9px] tracking-[0.6em]">Neural Sync Deployment Active</p>
+                      <div className="h-[1px] w-32 bg-gradient-to-r from-pink-600 to-transparent"></div>
+                    </div>
                   </div>
                 </div>
-                <div>
-                  <h2 className="text-5xl font-black font-rajdhani text-white uppercase italic tracking-tighter drop-shadow-[0_0_15px_rgba(236,72,153,0.3)]">EXTRACTION POINT</h2>
-                  <div className="flex items-center gap-4 mt-1">
-                    <p className="text-pink-500 font-bold uppercase text-[9px] tracking-[0.6em]">Neural Sync Deployment Active</p>
-                    <div className="h-[1px] w-32 bg-gradient-to-r from-pink-600 to-transparent"></div>
-                  </div>
+                <div className="mr-8 flex flex-col items-end">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Operator</span>
+                  <span className="text-xl font-black text-white font-rajdhani italic">{user?.username}</span>
+                  <button onClick={handleLogout} className="text-[8px] text-red-500 font-black uppercase tracking-[0.2em] mt-1 hover:text-white transition-colors">Disconnect</button>
                 </div>
               </div>
               
@@ -195,7 +330,7 @@ const App: React.FC = () => {
                     </div>
                     <h3 className="text-2xl font-black font-rajdhani text-white mb-3 text-center h-16 flex items-center tracking-tight leading-tight uppercase italic drop-shadow-sm">{c.name}</h3>
                     <p className="text-yellow-500 font-black mb-8 text-3xl font-rajdhani drop-shadow-[0_0_10px_rgba(234,179,8,0.4)]">${c.price.toFixed(2)}</p>
-                    <button onClick={() => handleOpenCase(c)} className="w-full bg-gradient-to-r from-pink-600 to-purple-700 hover:from-pink-500 hover:to-purple-600 text-white font-black py-4.5 rounded-2xl transition-all shadow-xl hover:shadow-pink-600/50 active:scale-95 uppercase tracking-[0.25em] text-[10px] italic border-b-4 border-black/40">Execute Protocol</button>
+                    <button onClick={() => handleOpenCase(c)} className="w-full bg-gradient-to-r from-pink-600 to-purple-700 hover:from-pink-500 hover:to-purple-600 text-white font-black py-4.5 rounded-2xl transition-all shadow-xl hover:shadow-pink-600/50 active:scale-95 uppercase tracking-[0.25em] text-[10px] italic border-b-4 border-black/30">Execute Protocol</button>
                   </motion.div>
                 ))}
               </div>
@@ -311,7 +446,6 @@ const App: React.FC = () => {
                        <img 
                           src={MASCOT_URL} 
                           className="w-full h-full object-cover transition-all duration-1000 grayscale-[0.2] group-hover:grayscale-0 group-hover:scale-105" 
-                          style={{ filter: 'hue-rotate(270deg) brightness(1.2) contrast(1.15)' }} 
                        />
                        <div className="absolute inset-0 bg-gradient-to-t from-[#05020a] via-transparent to-transparent opacity-90"></div>
                        <div className="absolute bottom-12 left-0 right-0 text-center flex flex-col items-center">
@@ -378,7 +512,6 @@ const App: React.FC = () => {
             </motion.div>
           )}
 
-          {/* SHOP, INVENTORY, etc. remain with the refined theme */}
           {currentView === 'SHOP' && (
             <motion.div 
               key="shop"
@@ -619,7 +752,7 @@ const App: React.FC = () => {
              whileHover={{ scale: 1.1, rotate: 5 }}
              className="w-24 h-24 rounded-full border-2 border-pink-500/20 mx-auto mb-12 opacity-30 grayscale overflow-hidden group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700 cursor-crosshair shadow-2xl"
           >
-            <img src={MASCOT_URL} className="w-full h-full object-cover" style={{ filter: 'hue-rotate(270deg)' }} />
+            <img src={MASCOT_URL} className="w-full h-full object-cover" />
           </motion.div>
           <h4 className="text-3xl font-black font-rajdhani text-white/15 mb-6 tracking-[0.4em] italic uppercase drop-shadow-sm">Devourer Management Systems</h4>
           <p className="text-slate-900 text-[12px] font-black uppercase tracking-[1.2em] font-rajdhani">© 2024 DEVOUREROFCASE | THE NEURAL REIGN</p>

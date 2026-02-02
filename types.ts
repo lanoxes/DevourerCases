@@ -39,6 +39,12 @@ export interface InventoryItem extends Skin {
   acquiredAt: number;
 }
 
-export type View = 'LOBBY' | 'CASE_OPEN' | 'INVENTORY' | 'AI_ANALYSIS' | 'ADMIN' | 'SHOP' | 'PAYMENT' | 'WITHDRAW';
+export type View = 'LOBBY' | 'CASE_OPEN' | 'INVENTORY' | 'AI_ANALYSIS' | 'ADMIN' | 'SHOP' | 'PAYMENT' | 'WITHDRAW' | 'AUTH';
 
 export type PaymentProvider = 'PAYPAL' | 'DANA' | 'GOPAY' | 'SEABANK' | 'QRIS';
+
+export interface User {
+  username: string;
+  email: string;
+  balance: number;
+}

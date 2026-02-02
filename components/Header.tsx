@@ -20,10 +20,9 @@ const Header: React.FC<HeaderProps> = ({ balance, currentView, setView }) => {
             <div className="absolute inset-0 bg-pink-500 rounded-full blur-xl opacity-20 group-hover:opacity-60 transition-opacity"></div>
             <div className="w-14 h-14 rounded-full border-2 border-pink-500/50 p-0.5 relative z-10 overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.4)]">
               <img 
-                src="https://images.unsplash.com/photo-1614728263952-84ea256f9679?q=80&w=1974&auto=format&fit=crop" 
+                src="https://image2url.com/r2/default/images/1770034854711-60d7c45b-78b0-45d4-9f36-3773406af894.jpeg" 
                 alt="Devourer Mascot" 
-                className="w-full h-full object-cover grayscale-[0.2] contrast-125 group-hover:scale-110 transition-transform duration-700"
-                style={{ filter: 'hue-rotate(270deg) brightness(1.2)' }}
+                className="w-full h-full object-cover contrast-110 group-hover:scale-110 transition-transform duration-700"
               />
             </div>
           </div>
