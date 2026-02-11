@@ -1,4 +1,3 @@
-
 export enum Rarity {
   MIL_SPEC = 'MIL_SPEC', // Blue
   RESTRICTED = 'RESTRICTED', // Purple
@@ -30,8 +29,8 @@ export interface Case {
   imageUrl: string;
   skins: Skin[];
   reviews: Review[];
-  rarityTier?: Rarity; // Visual indicator for case quality
-  hasGold?: boolean; // Whether this case contains rare special items
+  rarityTier?: Rarity; 
+  hasGold?: boolean; 
 }
 
 export interface InventoryItem extends Skin {
@@ -39,7 +38,7 @@ export interface InventoryItem extends Skin {
   acquiredAt: number;
 }
 
-export type View = 'LOBBY' | 'CASE_OPEN' | 'INVENTORY' | 'AI_ANALYSIS' | 'ADMIN' | 'SHOP' | 'PAYMENT' | 'WITHDRAW' | 'AUTH';
+export type View = 'LOBBY' | 'CASE_OPEN' | 'INVENTORY' | 'ADMIN' | 'SHOP' | 'PAYMENT' | 'AUTH';
 
 export type PaymentProvider = 'PAYPAL' | 'DANA' | 'GOPAY' | 'SEABANK' | 'QRIS';
 

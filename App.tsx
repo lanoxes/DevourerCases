@@ -1,14 +1,11 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { View, Case, Skin, InventoryItem, Rarity, PaymentProvider, User } from './types';
-import { CASES as INITIAL_CASES, SKINS as INITIAL_SKINS, RARITY_COLORS, BORDER_COLORS, GLOW_COLORS } from './constants';
+import { CASES as INITIAL_CASES, SKINS as INITIAL_SKINS, RARITY_COLORS } from './constants';
 import Header from './components/Header';
 import CaseOpener from './components/CaseOpener';
-import { getLuckAnalysis } from './services/geminiService';
 import { sounds } from './services/soundService';
 
-// Konfigurasi internal
 const ADMIN_KEY = "devourer123";
 const STORAGE_KEYS = {
   USER: 'devourer_session',
@@ -24,13 +21,12 @@ const RARITY_ORDER: Record<Rarity, number> = {
 };
 
 const pageVariants = {
-  initial: { opacity: 0, y: 15, filter: 'blur(10px)' },
-  animate: { opacity: 1, y: 0, filter: 'blur(0px)' },
-  exit: { opacity: 0, y: -15, filter: 'blur(10px)' }
+  initial: { opacity: 0, scale: 0.98 },
+  animate: { opacity: 1, scale: 1 },
+  exit: { opacity: 0, scale: 1.02 }
 };
 
 const App: React.FC = () => {
-  // Auth & Session Persistence
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.USER);
     return saved ? JSON.parse(saved) : null;
@@ -41,33 +37,20 @@ const App: React.FC = () => {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
   const [authForm, setAuthForm] = useState({ email: '', username: '', password: '' });
-  
   const [balance, setBalance] = useState<number>(user ? user.balance : 0);
   const [currentView, setView] = useState<View>(user ? 'LOBBY' : 'AUTH');
   const [activeCase, setActiveCase] = useState<Case | null>(null);
   const [caseSessionId, setCaseSessionId] = useState(0);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
-  const [aiResponse, setAiResponse] = useState<{ score: number; comment: string } | null>(null);
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [wishlist, setWishlist] = useState<string[]>([]);
   const [inventorySort, setInventorySort] = useState<'NEWEST' | 'PRICE' | 'RARITY'>('NEWEST');
   
-  // Admin & Payment States
   const [isAdminAuth, setIsAdminAuth] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
   const [adminBalanceInput, setAdminBalanceInput] = useState("");
   const [paymentAmount, setPaymentAmount] = useState<number>(10);
-  const [selectedProvider, setSelectedProvider] = useState<PaymentProvider>('PAYPAL');
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
 
-  const [cases] = useState<Case[]>(INITIAL_CASES);
-  const [skins] = useState<Skin[]>(INITIAL_SKINS);
-
-  const MASCOT_URL = "https://image2url.com/r2/default/images/1770034854711-60d7c45b-78b0-45d4-9f36-3773406af894.jpeg";
-
-  // Sync session & inventory to storage
   useEffect(() => {
     if (user) {
       const updatedUser = { ...user, balance };
@@ -80,10 +63,6 @@ const App: React.FC = () => {
   }, [inventory]);
 
   const handleNavigate = (v: View) => {
-    if (!user && v !== 'AUTH') {
-      setView('AUTH');
-      return;
-    }
     sounds.playClick();
     setView(v);
   };
@@ -91,24 +70,12 @@ const App: React.FC = () => {
   const handleAuthSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     sounds.playWin();
-    
-    // Check if user exists for login mode
-    const existingSession = localStorage.getItem(STORAGE_KEYS.USER);
-    const existingData = existingSession ? JSON.parse(existingSession) : null;
-
-    let newUser: User;
-    if (authMode === 'LOGIN' && existingData && existingData.email === authForm.email) {
-      newUser = existingData;
-      setBalance(existingData.balance);
-    } else {
-      newUser = {
-        username: authForm.username || authForm.email.split('@')[0],
-        email: authForm.email,
-        balance: authMode === 'SIGNUP' ? 50.00 : 0,
-      };
-      if (authMode === 'SIGNUP') setBalance(50.00);
-    }
-
+    const newUser = {
+      username: authForm.username || authForm.email.split('@')[0],
+      email: authForm.email,
+      balance: user?.balance || 50.00,
+    };
+    if (!user) setBalance(50.00);
     setUser(newUser);
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(newUser));
     setView('LOBBY');
@@ -129,7 +96,6 @@ const App: React.FC = () => {
       setCaseSessionId(prev => prev + 1);
       setView('CASE_OPEN');
     } else {
-      sounds.playTick();
       handleNavigate('PAYMENT');
     }
   };
@@ -160,67 +126,15 @@ const App: React.FC = () => {
     setSelectedItem(null);
   };
 
-  const toggleWishlist = (caseId: string) => {
-    sounds.playTick();
-    setWishlist(prev => prev.includes(caseId) ? prev.filter(id => id !== caseId) : [...prev, caseId]);
-  };
-
   const sortedInventory = useMemo(() => {
     const items = [...inventory];
     if (inventorySort === 'PRICE') return items.sort((a, b) => b.price - a.price);
-    if (inventorySort === 'RARITY') {
-        return items.sort((a, b) => RARITY_ORDER[b.rarity] - RARITY_ORDER[a.rarity]);
-    }
+    if (inventorySort === 'RARITY') return items.sort((a, b) => RARITY_ORDER[b.rarity] - RARITY_ORDER[a.rarity]);
     return items.sort((a, b) => b.acquiredAt - a.acquiredAt);
   }, [inventory, inventorySort]);
 
-  const handleAdminAuth = () => {
-    if (passwordInput === ADMIN_KEY) {
-      setIsAdminAuth(true);
-      sounds.playWin();
-    } else {
-      sounds.playTick();
-    }
-  };
-
-  const handleSetBalance = () => {
-    const newBalance = parseFloat(adminBalanceInput);
-    if (!isNaN(newBalance)) {
-      setBalance(newBalance);
-      sounds.playWin();
-    }
-  };
-
-  const handleProcessTopup = () => {
-    if (paymentAmount <= 0) return;
-    setIsProcessingPayment(true);
-    sounds.playClick();
-    
-    setTimeout(() => {
-      setBalance(prev => prev + paymentAmount);
-      setIsProcessingPayment(false);
-      sounds.playWin();
-      handleNavigate('LOBBY');
-    }, 1800);
-  };
-
-  const handleRunAiSync = async () => {
-    if (isAiLoading) return;
-    setIsAiLoading(true);
-    sounds.playTick();
-    try {
-      const res = await getLuckAnalysis(inventory); 
-      setAiResponse(res); 
-      sounds.playWin();
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsAiLoading(false);
-    }
-  };
-
   return (
-    <div className="min-h-screen flex flex-col bg-[#05020a]">
+    <div className="min-h-screen flex flex-col bg-midnight">
       {currentView !== 'AUTH' && (
         <Header balance={balance} currentView={currentView} setView={handleNavigate} />
       )}
@@ -228,449 +142,123 @@ const App: React.FC = () => {
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-8">
         <AnimatePresence mode="wait">
           {currentView === 'AUTH' && (
-            <motion.div 
-              key="auth"
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="min-h-[80vh] flex items-center justify-center p-4"
-            >
-              <div className="w-full max-w-md bg-[#1a0b2e]/90 border-2 border-pink-500/20 rounded-[3rem] p-10 shadow-[0_0_100px_rgba(236,72,153,0.15)] backdrop-blur-xl relative overflow-hidden">
-                <div className="absolute -top-24 -right-24 w-64 h-64 bg-pink-600/10 blur-[100px] rounded-full"></div>
-                
-                <div className="text-center mb-10">
-                  <div className="w-24 h-24 mx-auto mb-6 rounded-full border-2 border-pink-500/40 p-1 overflow-hidden shadow-[0_0_20px_rgba(236,72,153,0.3)]">
-                    <img src={MASCOT_URL} className="w-full h-full object-cover" />
-                  </div>
-                  <h2 className="text-4xl font-black font-rajdhani text-white italic tracking-tighter uppercase logo-gradient">
-                    {authMode === 'LOGIN' ? 'IDENTIFY' : 'REGISTER'}
-                  </h2>
-                  <p className="text-pink-500 text-[10px] font-black tracking-[0.4em] uppercase mt-2">Neural Gateway Interface</p>
-                </div>
-
+            <motion.div key="auth" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="min-h-[70vh] flex items-center justify-center p-4">
+              <div className="w-full max-w-sm bg-[#0a0515] border border-white/5 rounded-3xl p-8 shadow-2xl text-center">
+                <h2 className="text-3xl font-black font-rajdhani text-white mb-8 italic uppercase tracking-widest">IDENTIFY USER</h2>
                 <form onSubmit={handleAuthSubmit} className="space-y-6">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-2">Uplink Address (Email)</label>
-                    <input 
-                      required
-                      type="email" 
-                      placeholder="user@neural.mesh"
-                      className="w-full bg-[#05020a] border border-pink-500/10 rounded-2xl p-4 text-white font-rajdhani text-xl outline-none focus:border-pink-500/50 transition-all shadow-inner"
-                      value={authForm.email}
-                      onChange={e => setAuthForm({...authForm, email: e.target.value})}
-                    />
-                  </div>
-                  
-                  {authMode === 'SIGNUP' && (
-                    <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
-                      <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-2">Handle (Username)</label>
-                      <input 
-                        required
-                        type="text" 
-                        placeholder="Operator_X"
-                        className="w-full bg-[#05020a] border border-pink-500/10 rounded-2xl p-4 text-white font-rajdhani text-xl outline-none focus:border-pink-500/50 transition-all shadow-inner"
-                        value={authForm.username}
-                        onChange={e => setAuthForm({...authForm, username: e.target.value})}
-                      />
-                    </motion.div>
-                  )}
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2 ml-2">Access Key (Password)</label>
-                    <input 
-                      required
-                      type="password" 
-                      placeholder="••••••••"
-                      className="w-full bg-[#05020a] border border-pink-500/10 rounded-2xl p-4 text-white font-rajdhani text-xl outline-none focus:border-pink-500/50 transition-all shadow-inner"
-                      value={authForm.password}
-                      onChange={e => setAuthForm({...authForm, password: e.target.value})}
-                    />
-                  </div>
-
-                  <button 
-                    type="submit"
-                    className="w-full bg-gradient-to-r from-pink-600 to-purple-800 text-white font-black py-5 rounded-2xl uppercase tracking-[0.3em] shadow-xl hover:shadow-pink-600/40 active:scale-95 transition-all italic text-xs border-t border-white/10"
-                  >
-                    {authMode === 'LOGIN' ? 'INITIALIZE UPLINK' : 'AUTHORIZE ACCOUNT'}
-                  </button>
+                  <input 
+                    required type="email" placeholder="Email Uplink" 
+                    className="w-full bg-black border border-white/10 rounded-xl p-4 text-white font-rajdhani outline-none focus:border-pink-500 transition-all"
+                    value={authForm.email} onChange={e => setAuthForm({...authForm, email: e.target.value})}
+                  />
+                  <input 
+                    required type="password" placeholder="Access Code"
+                    className="w-full bg-black border border-white/10 rounded-xl p-4 text-white font-rajdhani outline-none focus:border-pink-500 transition-all"
+                    value={authForm.password} onChange={e => setAuthForm({...authForm, password: e.target.value})}
+                  />
+                  <button type="submit" className="w-full bg-pink-600 hover:bg-pink-500 text-white font-black py-4 rounded-xl uppercase tracking-widest transition-all italic text-xs">Authorize</button>
                 </form>
-
-                <div className="mt-8 text-center">
-                  <button 
-                    onClick={() => {
-                      sounds.playTick();
-                      setAuthMode(authMode === 'LOGIN' ? 'SIGNUP' : 'LOGIN');
-                    }}
-                    className="text-[10px] font-black text-slate-600 hover:text-pink-500 uppercase tracking-widest transition-colors"
-                  >
-                    {authMode === 'LOGIN' ? 'Request New Identity' : 'Existing Identity Detected'}
-                  </button>
-                </div>
               </div>
             </motion.div>
           )}
 
           {currentView === 'LOBBY' && (
-            <motion.div 
-              key="lobby"
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="space-y-12"
-            >
-              <div className="flex items-center justify-between border-l-4 border-pink-600 pl-6 py-4 bg-[#1a0b2e]/40 rounded-r-[2rem] shadow-2xl backdrop-blur-md">
-                <div className="flex items-center gap-8">
-                  <div className="relative group">
-                    <div className="absolute inset-0 bg-pink-500 rounded-3xl blur-2xl opacity-20 group-hover:opacity-40 transition-opacity"></div>
-                    <div className="w-24 h-24 rounded-3xl border-2 border-pink-500/30 overflow-hidden shadow-2xl hidden md:block relative z-10">
-                      <img 
-                        src={MASCOT_URL} 
-                        className="w-full h-full object-cover transition-all duration-700 group-hover:scale-110" 
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <h2 className="text-5xl font-black font-rajdhani text-white uppercase italic tracking-tighter drop-shadow-[0_0_15px_rgba(236,72,153,0.3)]">EXTRACTION POINT</h2>
-                    <div className="flex items-center gap-4 mt-1">
-                      <p className="text-pink-500 font-bold uppercase text-[9px] tracking-[0.6em]">Neural Sync Deployment Active</p>
-                      <div className="h-[1px] w-32 bg-gradient-to-r from-pink-600 to-transparent"></div>
-                    </div>
-                  </div>
+            <motion.div key="lobby" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-12">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-[#0a0515] p-6 rounded-2xl border border-white/5">
+                <div className="text-center md:text-left">
+                  <h2 className="text-3xl font-black font-rajdhani text-white uppercase italic tracking-widest">DEPLOYMENT ZONE</h2>
                 </div>
-                <div className="mr-8 flex flex-col items-end">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Operator</span>
-                  <span className="text-xl font-black text-white font-rajdhani italic">{user?.username}</span>
-                  <button onClick={handleLogout} className="text-[8px] text-red-500 font-black uppercase tracking-[0.2em] mt-1 hover:text-white transition-colors">Disconnect</button>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-[10px] text-slate-500 font-bold uppercase">{user?.username}</p>
+                    <button onClick={handleLogout} className="text-[8px] text-red-500 font-black uppercase hover:text-white transition-colors">Logout</button>
+                  </div>
                 </div>
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-                {cases.map(c => (
+                {INITIAL_CASES.map(c => (
                   <motion.div 
-                    key={c.id} 
-                    whileHover={{ y: -12, scale: 1.02 }}
-                    className={`group bg-[#1a0b2e] border-2 ${c.rarityTier ? BORDER_COLORS[c.rarityTier] : 'border-pink-500/10'} rounded-[2rem] p-8 flex flex-col items-center hover:bg-[#25133d] transition-all relative overflow-hidden shadow-2xl ${c.rarityTier ? GLOW_COLORS[c.rarityTier] : 'shadow-black/60'}`}
+                    key={c.id} whileHover={{ y: -6 }}
+                    className={`bg-[#0a0515] border border-white/5 rounded-2xl p-6 flex flex-col items-center hover:border-pink-500/30 transition-all shadow-xl`}
                   >
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); toggleWishlist(c.id); }}
-                      className={`absolute top-6 right-6 text-xl transition-all ${wishlist.includes(c.id) ? 'text-pink-500 scale-125 drop-shadow-[0_0_12px_rgba(236,72,153,0.8)]' : 'text-slate-700 hover:text-pink-500'}`}
-                    >
-                      ★
-                    </button>
-                    <div className="relative mb-8">
-                      <div className="absolute inset-0 bg-pink-500/5 blur-3xl rounded-full scale-150 group-hover:bg-pink-500/15 transition-all"></div>
-                      <img src={c.imageUrl} alt={c.name} className="w-44 h-44 object-contain relative z-10 transform group-hover:rotate-6 group-hover:scale-115 transition-all duration-500 drop-shadow-[0_25px_45px_rgba(0,0,0,0.7)]" />
-                    </div>
-                    <h3 className="text-2xl font-black font-rajdhani text-white mb-3 text-center h-16 flex items-center tracking-tight leading-tight uppercase italic drop-shadow-sm">{c.name}</h3>
-                    <p className="text-yellow-500 font-black mb-8 text-3xl font-rajdhani drop-shadow-[0_0_10px_rgba(234,179,8,0.4)]">${c.price.toFixed(2)}</p>
-                    <button onClick={() => handleOpenCase(c)} className="w-full bg-gradient-to-r from-pink-600 to-purple-700 hover:from-pink-500 hover:to-purple-600 text-white font-black py-4.5 rounded-2xl transition-all shadow-xl hover:shadow-pink-600/50 active:scale-95 uppercase tracking-[0.25em] text-[10px] italic border-b-4 border-black/30">Execute Protocol</button>
+                    <img src={c.imageUrl} alt={c.name} className="w-40 h-40 object-contain mb-4 drop-shadow-2xl" />
+                    <h3 className="text-lg font-black font-rajdhani text-white mb-2 text-center h-12 uppercase italic leading-tight">{c.name}</h3>
+                    <p className="text-yellow-500 font-black mb-6 font-rajdhani text-2xl tracking-tighter">${c.price.toFixed(2)}</p>
+                    <button onClick={() => handleOpenCase(c)} className="w-full bg-pink-600 hover:bg-pink-500 text-white font-black py-3.5 rounded-xl transition-all uppercase tracking-widest text-[10px] italic">Unlock</button>
                   </motion.div>
                 ))}
               </div>
             </motion.div>
           )}
 
-          {currentView === 'PAYMENT' && (
-            <motion.div 
-              key="payment"
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="max-w-4xl mx-auto space-y-12"
-            >
-              <div className="text-center space-y-4">
-                <h2 className="text-6xl font-black font-rajdhani text-white uppercase italic tracking-tighter drop-shadow-2xl">CREDIT UPLINK</h2>
-                <div className="inline-flex items-center gap-6 bg-pink-600/10 px-8 py-2 rounded-full border border-pink-500/20 backdrop-blur-sm">
-                  <span className="w-2.5 h-2.5 rounded-full bg-pink-500 animate-pulse"></span>
-                  <p className="text-pink-500 font-bold text-[10px] tracking-[0.6em] uppercase">Authorized Secure Gateway: Neural Handshake Stable</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-                <div className="lg:col-span-2 space-y-10">
-                  <div className="bg-[#1a0b2e]/60 border border-pink-500/10 rounded-[3rem] p-12 shadow-2xl relative overflow-hidden backdrop-blur-lg">
-                    <div className="absolute top-0 right-0 w-80 h-80 bg-pink-600/5 blur-[100px] rounded-full"></div>
-                    <h3 className="text-white font-black uppercase tracking-[0.3em] text-xs mb-10 flex items-center gap-5">
-                      <span className="w-12 h-12 rounded-2xl bg-pink-600/20 border border-pink-500/30 flex items-center justify-center text-sm font-black italic text-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.3)]">01</span>
-                      Resource Allocation
-                    </h3>
-                    <div className="grid grid-cols-3 gap-6">
-                      {[10, 25, 50, 100, 250, 500].map(amt => (
-                        <button 
-                          key={amt}
-                          onClick={() => { sounds.playTick(); setPaymentAmount(amt); }}
-                          className={`py-8 rounded-[2rem] font-black font-rajdhani text-4xl border-2 transition-all ${paymentAmount === amt ? 'bg-pink-600 border-pink-400 text-white shadow-[0_0_40px_rgba(236,72,153,0.4)] scale-105' : 'bg-[#0f051a] border-[#2d1b4d] text-slate-500 hover:border-pink-500/50 hover:text-white'}`}
-                        >
-                          ${amt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="bg-[#1a0b2e]/60 border border-pink-500/10 rounded-[3rem] p-12 shadow-2xl backdrop-blur-lg">
-                    <h3 className="text-white font-black uppercase tracking-[0.3em] text-xs mb-10 flex items-center gap-5">
-                      <span className="w-12 h-12 rounded-2xl bg-pink-600/20 border border-pink-500/30 flex items-center justify-center text-sm font-black italic text-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.3)]">02</span>
-                      Transfer Interface
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                      {(['PAYPAL', 'DANA', 'GOPAY', 'QRIS', 'SEABANK'] as PaymentProvider[]).map(provider => (
-                        <button 
-                          key={provider}
-                          onClick={() => { sounds.playTick(); setSelectedProvider(provider); }}
-                          className={`flex flex-col items-center justify-center gap-5 p-8 rounded-[2.5rem] border-2 transition-all ${selectedProvider === provider ? 'bg-pink-600/15 border-pink-500 text-white shadow-[0_0_25px_rgba(236,72,153,0.2)]' : 'bg-[#0f051a] border-[#2d1b4d] text-slate-500 hover:border-pink-500/40'}`}
-                        >
-                          <span className="text-[11px] font-black uppercase tracking-[0.5em]">{provider}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-10">
-                  <div className="bg-[#1a0b2e] border-2 border-pink-600/40 rounded-[3rem] p-12 shadow-[0_0_60px_rgba(236,72,153,0.1)] sticky top-36 overflow-hidden">
-                    <div className="absolute -top-12 -right-12 w-48 h-48 bg-pink-600 opacity-10 blur-[80px] rounded-full"></div>
-                    <h3 className="text-white font-black uppercase tracking-[0.3em] text-[10px] mb-12 border-b border-pink-500/10 pb-6 italic">Protocol Metadata</h3>
-                    <div className="space-y-8 mb-14">
-                      <div className="flex justify-between text-slate-500 text-[11px] font-black uppercase tracking-[0.3em]">
-                        <span>Units Ordered</span>
-                        <span className="text-white">${paymentAmount.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-slate-500 text-[11px] font-black uppercase tracking-[0.3em]">
-                        <span>Portal Fee</span>
-                        <span className="text-green-500 font-black italic">EXEMPT</span>
-                      </div>
-                      <div className="pt-10 flex justify-between items-center border-t border-pink-500/20">
-                        <span className="text-white font-black uppercase tracking-[0.3em] text-xs italic">Grand Total</span>
-                        <span className="text-5xl text-yellow-500 font-black font-rajdhani drop-shadow-[0_0_20px_rgba(234,179,8,0.5)] tracking-tighter">${paymentAmount.toFixed(2)}</span>
-                      </div>
-                    </div>
-
-                    <button 
-                      onClick={handleProcessTopup}
-                      disabled={isProcessingPayment || paymentAmount <= 0}
-                      className="w-full bg-gradient-to-br from-pink-600 via-purple-700 to-pink-800 hover:from-pink-500 hover:to-purple-600 text-white font-black py-8 rounded-[2rem] uppercase tracking-[0.5em] shadow-2xl shadow-pink-900/60 active:scale-95 disabled:opacity-50 disabled:grayscale transition-all text-[11px] italic border-t border-pink-400/20"
-                    >
-                      {isProcessingPayment ? (
-                        <span className="flex items-center justify-center gap-4">
-                           <div className="w-2 h-2 rounded-full bg-white animate-ping"></div>
-                           SYNCING...
-                        </span>
-                      ) : 'START UPLINK'}
-                    </button>
-                    <p className="mt-8 text-[9px] text-slate-700 font-black uppercase text-center tracking-widest">Neural Encryption: 512-bit RSA</p>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {currentView === 'AI_ANALYSIS' && (
-            <motion.div key="ai" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="max-w-5xl mx-auto space-y-16">
-               <div className="text-center space-y-2">
-                  <h2 className="text-7xl font-black font-rajdhani text-white uppercase italic tracking-tighter drop-shadow-2xl">NEURAL SYNC</h2>
-                  <p className="text-pink-500 font-bold text-[12px] tracking-[0.7em] uppercase">Protocol Mascot: Destiny Evaluator V2.4</p>
-               </div>
-               
-               <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
-                  <div className="relative group">
-                    <div className="absolute inset-0 bg-pink-600 rounded-[4rem] blur-[100px] opacity-15 group-hover:opacity-30 transition-all duration-1000"></div>
-                    <div className="relative z-10 rounded-[4rem] border-2 border-pink-500/40 overflow-hidden shadow-[0_0_80px_rgba(236,72,153,0.2)] aspect-[4/5] bg-[#0f051a]">
-                       <img 
-                          src={MASCOT_URL} 
-                          className="w-full h-full object-cover transition-all duration-1000 grayscale-[0.2] group-hover:grayscale-0 group-hover:scale-105" 
-                       />
-                       <div className="absolute inset-0 bg-gradient-to-t from-[#05020a] via-transparent to-transparent opacity-90"></div>
-                       <div className="absolute bottom-12 left-0 right-0 text-center flex flex-col items-center">
-                          <div className="h-0.5 w-32 bg-pink-500 mb-6 animate-pulse shadow-[0_0_15px_pink]"></div>
-                          <span className="text-pink-500 font-black tracking-[0.8em] uppercase text-[12px] italic drop-shadow-[0_0_15px_rgba(236,72,153,1)]">NEURAL HANDSHAKE: STABLE</span>
-                       </div>
-                    </div>
-                  </div>
-
-                  <div className="bg-[#1a0b2e]/90 backdrop-blur-2xl border-2 border-pink-500/20 rounded-[5rem] p-16 flex flex-col items-center gap-12 shadow-3xl relative overflow-hidden h-full justify-between border-t-pink-500/40">
-                    <div className="absolute -top-20 -right-20 w-80 h-80 bg-pink-600 opacity-5 blur-[120px] rounded-full"></div>
-                    
-                    <div className="w-full flex flex-col items-center gap-6">
-                      <h3 className="text-white font-black font-rajdhani text-3xl tracking-[0.2em] uppercase italic drop-shadow-sm">DIAGNOSTIC CORE</h3>
-                      <div className="h-[2px] w-full bg-gradient-to-r from-transparent via-pink-500/30 to-transparent"></div>
-                    </div>
-
-                    <motion.div 
-                      animate={isAiLoading ? { rotate: 360 } : {}}
-                      transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-                      className="w-64 h-64 rounded-full border-[12px] border-pink-500/10 border-t-pink-600 flex items-center justify-center bg-[#05020a] shadow-[0_0_80px_rgba(236,72,153,0.3)] relative group-hover:shadow-pink-600/50 transition-all"
-                    >
-                       <div className="absolute inset-4 rounded-full border-2 border-pink-500/5 animate-[ping_3s_infinite]"></div>
-                       <span className="text-[9rem] font-black text-white font-rajdhani italic drop-shadow-[0_0_30px_rgba(255,255,255,0.3)] tracking-tighter">{aiResponse ? aiResponse.score : '??'}</span>
-                    </motion.div>
-
-                    <div className="min-h-[200px] w-full flex items-center justify-center px-8 relative z-10">
-                      <AnimatePresence mode="wait">
-                        {aiResponse ? (
-                          <motion.p 
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="text-slate-100 italic text-3xl leading-relaxed font-serif text-center drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]"
-                          >
-                            "{aiResponse.comment}"
-                          </motion.p>
-                        ) : (
-                          <div className="flex flex-col items-center gap-8">
-                            <p className="text-pink-500/50 font-black uppercase tracking-[0.6em] text-[11px] animate-pulse">Awaiting Mascot Synchronization Pulse...</p>
-                            <div className="flex gap-4">
-                              {[1,2,3,4].map(i => <div key={i} className="w-2 h-2 rounded-full bg-pink-600 animate-bounce shadow-[0_0_8px_pink]" style={{ animationDelay: `${i * 0.15}s` }}></div>)}
-                            </div>
-                          </div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-
-                    <button 
-                      onClick={handleRunAiSync} 
-                      disabled={isAiLoading} 
-                      className="w-full bg-white text-black font-black py-8 rounded-[2.5rem] hover:bg-pink-600 hover:text-white disabled:opacity-50 transition-all uppercase tracking-[0.5em] italic text-base shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:shadow-pink-600/60 active:scale-95 border-t-2 border-white/30"
-                    >
-                      {isAiLoading ? 'SCANNING NEURAL MESH...' : 'COMMENCE NEURAL SYNC'}
-                    </button>
-                  </div>
-               </div>
-            </motion.div>
-          )}
-
           {currentView === 'SHOP' && (
-            <motion.div 
-              key="shop"
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="space-y-10"
-            >
-              <h2 className="text-5xl font-black font-rajdhani text-white italic border-l-4 border-pink-600 pl-6 uppercase tracking-tighter drop-shadow-xl">BLACK MARKET</h2>
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
-                {skins.map(skin => (
-                  <motion.div 
-                    key={skin.id} 
-                    whileHover={{ y: -8, scale: 1.02 }}
-                    className="bg-[#1a0b2e] border border-pink-500/10 p-7 rounded-[2.5rem] flex flex-col hover:border-pink-500 transition-all group shadow-2xl backdrop-blur-sm"
-                  >
-                    <div className={`h-2.5 w-full rounded-t-2xl mb-6 ${RARITY_COLORS[skin.rarity]} shadow-inner`}></div>
-                    <img src={skin.imageUrl} className="w-full aspect-square object-contain mb-6 group-hover:scale-115 transition-all duration-700" />
-                    <p className="text-[11px] text-slate-500 font-bold tracking-[0.4em] uppercase mb-1.5">{skin.weapon}</p>
-                    <p className="text-lg font-black text-white mb-3 truncate font-rajdhani italic tracking-tight">{skin.name}</p>
-                    <p className="text-yellow-500 font-black mb-6 font-rajdhani text-3xl tracking-tighter drop-shadow-[0_0_12px_rgba(234,179,8,0.3)]">${skin.price.toLocaleString()}</p>
-                    <button onClick={() => handleBuySkin(skin)} className="mt-auto bg-[#05020a] border border-pink-500/20 hover:bg-pink-600 text-white text-[11px] py-4 rounded-2xl font-black uppercase transition-all shadow-md active:scale-95 tracking-[0.5em] italic">Capture Asset</button>
-                  </motion.div>
+            <motion.div key="shop" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-8">
+              <h2 className="text-3xl font-black font-rajdhani text-white italic uppercase tracking-widest border-l-4 border-pink-600 pl-4">ASSET MARKET</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                {INITIAL_SKINS.map(skin => (
+                  <div key={skin.id} className="bg-[#0a0515] border border-white/5 p-5 rounded-2xl flex flex-col hover:border-pink-500/20 transition-all group">
+                    <div className={`h-1.5 w-full rounded-full mb-4 ${RARITY_COLORS[skin.rarity]}`}></div>
+                    <img src={skin.imageUrl} className="w-full aspect-square object-contain mb-4" />
+                    <p className="text-[9px] text-slate-500 font-bold uppercase mb-1">{skin.weapon}</p>
+                    <p className="text-sm font-black text-white mb-3 truncate font-rajdhani italic">{skin.name}</p>
+                    <p className="text-yellow-500 font-black mb-4 font-rajdhani text-xl tracking-tighter">${skin.price.toLocaleString()}</p>
+                    <button onClick={() => handleBuySkin(skin)} className="mt-auto bg-white/5 hover:bg-white/10 text-white text-[9px] py-3 rounded-xl font-black uppercase tracking-widest italic">Acquire</button>
+                  </div>
                 ))}
               </div>
             </motion.div>
           )}
 
           {currentView === 'INVENTORY' && (
-            <motion.div 
-              key="inventory"
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              transition={{ duration: 0.4, ease: "easeOut" }}
-              className="space-y-12"
-            >
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8 border-l-4 border-pink-600 pl-8 bg-[#1a0b2e]/20 p-6 rounded-r-[3rem]">
+            <motion.div key="inventory" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="space-y-10">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-6 bg-[#0a0515] p-8 rounded-2xl border border-white/5">
                 <div>
-                  <h2 className="text-6xl font-black font-rajdhani text-white italic uppercase tracking-tighter drop-shadow-xl">ARCHIVE VAULT</h2>
-                  <p className="text-slate-500 font-bold text-[11px] tracking-[0.6em] uppercase mt-2">{inventory.length} Neural Assets Secured & Encrypted</p>
+                  <h2 className="text-4xl font-black font-rajdhani text-white italic uppercase tracking-widest">SECURE VAULT</h2>
+                  <p className="text-slate-500 font-bold text-[10px] tracking-widest uppercase mt-1">{inventory.length} Assets Logged</p>
                 </div>
-                <div className="flex items-center gap-8">
+                <div className="flex items-center gap-6">
                   <select 
-                    onChange={(e) => { sounds.playTick(); setInventorySort(e.target.value as any); }}
-                    className="bg-[#0f051a] border border-pink-500/20 text-white text-[11px] p-5 rounded-2xl outline-none focus:border-pink-500 font-black uppercase tracking-widest cursor-pointer shadow-2xl transition-all"
+                    onChange={(e) => setInventorySort(e.target.value as any)}
+                    className="bg-black border border-white/10 text-white text-[10px] p-3 rounded-xl outline-none focus:border-pink-500 font-black uppercase tracking-widest"
                   >
-                    <option value="NEWEST">Sequence: Recency</option>
-                    <option value="PRICE">Valuation: Market</option>
-                    <option value="RARITY">Class: Tier System</option>
+                    <option value="NEWEST">Recency</option>
+                    <option value="PRICE">Value</option>
+                    <option value="RARITY">Tier</option>
                   </select>
-                  <div className="bg-[#1a0b2e] px-12 py-5 rounded-[2rem] border border-pink-500/30 text-right shadow-[0_0_50px_rgba(0,0,0,0.6)] backdrop-blur-md">
-                    <p className="text-[11px] text-slate-500 font-black uppercase tracking-[0.4em] mb-1.5">Net Asset Worth</p>
-                    <p className="text-4xl text-yellow-500 font-black font-rajdhani tracking-tighter drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]">${inventory.reduce((acc, item) => acc + item.price, 0).toFixed(2)}</p>
-                  </div>
                 </div>
               </div>
 
-              {inventory.length === 0 ? (
-                <div className="py-40 text-center space-y-6 bg-[#1a0b2e]/10 rounded-[4rem] border border-dashed border-pink-500/10">
-                   <p className="text-slate-700 text-3xl font-rajdhani uppercase tracking-[0.4em] italic">Archive currently empty</p>
-                   <button onClick={() => handleNavigate('LOBBY')} className="text-pink-500 font-black uppercase text-xs tracking-widest hover:text-white transition-colors">Commence Extraction</button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-10">
-                  {sortedInventory.map((item) => (
-                    <motion.div 
-                      key={item.instanceId} 
-                      whileHover={{ scale: 1.08, y: -8 }}
-                      whileTap={{ scale: 0.92 }}
-                      onClick={() => { sounds.playClick(); setSelectedItem(item); }}
-                      className="bg-[#1a0b2e] border border-pink-500/10 rounded-[2.5rem] p-6 group relative cursor-pointer hover:bg-[#25133d] transition-all shadow-3xl"
-                    >
-                      <div className={`absolute bottom-0 left-0 right-0 h-2.5 rounded-b-[2.5rem] ${RARITY_COLORS[item.rarity]}`}></div>
-                      <div className="relative mb-6">
-                        <div className="absolute inset-0 bg-white/5 blur-3xl rounded-full group-hover:bg-white/10 transition-all duration-700"></div>
-                        <img src={item.imageUrl} className="w-full aspect-square object-contain relative z-10 group-hover:scale-120 transition-all duration-700 drop-shadow-xl" />
-                      </div>
-                      <p className="text-[10px] text-slate-500 font-black truncate opacity-80 uppercase tracking-tighter mb-1.5">{item.weapon}</p>
-                      <p className="text-sm text-white font-black truncate font-rajdhani uppercase italic tracking-tight">{item.name}</p>
-                    </motion.div>
-                  ))}
-                </div>
-              )}
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-6">
+                {sortedInventory.map((item) => (
+                  <div 
+                    key={item.instanceId} onClick={() => setSelectedItem(item)}
+                    className="bg-[#0a0515] border border-white/5 rounded-xl p-4 group cursor-pointer hover:border-white/20 transition-all relative"
+                  >
+                    <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-xl ${RARITY_COLORS[item.rarity]}`}></div>
+                    <img src={item.imageUrl} className="w-full aspect-square object-contain mb-3" />
+                    <p className="text-[10px] text-white font-black truncate font-rajdhani uppercase italic">{item.name}</p>
+                  </div>
+                ))}
+              </div>
 
               <AnimatePresence>
                 {selectedItem && (
-                  <motion.div 
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="fixed inset-0 z-[110] bg-[#05020a]/98 flex items-center justify-center p-8 backdrop-blur-3xl"
-                  >
-                     <motion.div 
-                       initial={{ scale: 0.85, opacity: 0, y: 40 }}
-                       animate={{ scale: 1, opacity: 1, y: 0 }}
-                       exit={{ scale: 0.85, opacity: 0, y: 40 }}
-                       className="bg-[#1a0b2e]/80 border-2 border-pink-500/30 p-16 rounded-[5rem] max-w-2xl w-full relative shadow-[0_0_180px_rgba(236,72,153,0.3)] overflow-hidden"
-                     >
-                        <div className="absolute top-0 right-0 w-80 h-80 bg-pink-600/10 blur-[150px]"></div>
-                        <button onClick={() => { sounds.playTick(); setSelectedItem(null); }} className="absolute top-12 right-12 text-slate-700 hover:text-white text-5xl transition-all transform hover:rotate-90">✕</button>
+                  <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[110] bg-black/90 flex items-center justify-center p-6 backdrop-blur-sm">
+                     <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} className="bg-[#0a0515] border border-white/10 p-8 rounded-3xl max-w-sm w-full relative shadow-2xl">
+                        <button onClick={() => setSelectedItem(null)} className="absolute top-6 right-6 text-slate-500 hover:text-white text-2xl">✕</button>
                         <div className="flex flex-col items-center">
-                            <div className="relative mb-14">
-                              <div className="absolute inset-0 bg-pink-500/5 blur-[80px] scale-150 rounded-full animate-pulse"></div>
-                              <img src={selectedItem.imageUrl} className="w-96 h-96 object-contain relative z-10 filter drop-shadow-[0_30px_80px_rgba(0,0,0,1)]" />
-                            </div>
-                            <p className="text-pink-500 font-black tracking-[0.8em] uppercase text-[11px] mb-6 italic drop-shadow-md">{selectedItem.weapon}</p>
-                            <h3 className="text-7xl font-black text-white font-rajdhani mb-8 text-center tracking-tighter italic uppercase leading-none">{selectedItem.name}</h3>
-                            <div className={`px-16 py-4 rounded-full text-sm font-black mb-16 tracking-[0.5em] uppercase shadow-3xl italic border border-white/10 ${RARITY_COLORS[selectedItem.rarity]}`}>{selectedItem.rarity}</div>
+                            <img src={selectedItem.imageUrl} className="w-48 h-48 object-contain mb-8 drop-shadow-2xl" />
+                            <h3 className="text-3xl font-black text-white font-rajdhani mb-6 text-center tracking-tight uppercase italic leading-none">{selectedItem.name}</h3>
                             
-                            <div className="w-full grid grid-cols-2 gap-12 text-center mb-16">
-                               <div className="bg-[#05020a] p-10 rounded-[2.5rem] border border-pink-500/20 shadow-inner">
-                                  <p className="text-[11px] text-slate-500 font-black uppercase mb-4 tracking-[0.4em]">Valuation Mesh</p>
-                                  <p className="text-5xl text-yellow-500 font-rajdhani font-black tracking-tighter drop-shadow-[0_0_15px_rgba(234,179,8,0.5)]">${selectedItem.price.toFixed(2)}</p>
-                               </div>
-                               <div className="bg-[#05020a] p-10 rounded-[2.5rem] border border-pink-500/20 shadow-inner">
-                                  <p className="text-[11px] text-slate-500 font-black uppercase mb-4 tracking-[0.4em]">Registry Date</p>
-                                  <p className="text-xl text-white font-black mt-3 uppercase tracking-widest italic">{new Date(selectedItem.acquiredAt).toLocaleDateString()}</p>
+                            <div className="w-full flex justify-between bg-black/40 p-4 rounded-xl mb-8 border border-white/5">
+                               <div className="text-left">
+                                  <p className="text-[8px] text-slate-500 font-black uppercase mb-1">Market Value</p>
+                                  <p className="text-xl text-yellow-500 font-rajdhani font-black">${selectedItem.price.toFixed(2)}</p>
                                </div>
                             </div>
 
-                            <button 
-                              onClick={() => handleSellSkin(selectedItem)}
-                              className="w-full py-8 bg-gradient-to-r from-yellow-600 to-yellow-300 text-black font-black uppercase tracking-[0.6em] rounded-[2.5rem] hover:from-yellow-500 hover:to-white transition-all shadow-3xl shadow-yellow-900/60 active:scale-95 text-lg italic border-t-2 border-white/40"
-                            >
-                              LIQUIDATE FOR ${selectedItem.price.toFixed(2)}
-                            </button>
+                            <button onClick={() => handleSellSkin(selectedItem)} className="w-full py-4 bg-red-600 hover:bg-red-500 text-white font-black uppercase tracking-widest rounded-xl transition-all shadow-xl active:scale-95 text-xs italic">Sell Weapon</button>
                         </div>
                      </motion.div>
                   </motion.div>
@@ -680,94 +268,40 @@ const App: React.FC = () => {
           )}
 
           {currentView === 'CASE_OPEN' && activeCase && (
-            <motion.div 
-              key={`case_open_${caseSessionId}`}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            >
-              <CaseOpener key={caseSessionId} activeCase={activeCase} onClose={() => handleNavigate('LOBBY')} onWin={handleWinItem} />
+            <CaseOpener key={caseSessionId} activeCase={activeCase} onClose={() => handleNavigate('LOBBY')} onWin={handleWinItem} />
+          )}
+
+          {currentView === 'PAYMENT' && (
+            <motion.div key="payment" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="max-w-2xl mx-auto space-y-10">
+              <h2 className="text-4xl font-black font-rajdhani text-white uppercase italic tracking-widest text-center">CREDIT REPLENISH</h2>
+              <div className="bg-[#0a0515] border border-white/5 rounded-3xl p-8 space-y-8">
+                <div className="grid grid-cols-3 gap-4">
+                  {[10, 50, 100].map(amt => (
+                    <button key={amt} onClick={() => setPaymentAmount(amt)} className={`py-6 rounded-xl font-black font-rajdhani text-2xl border transition-all ${paymentAmount === amt ? 'bg-pink-600 border-pink-400 text-white' : 'bg-black border-white/10 text-slate-500'}`}>${amt}</button>
+                  ))}
+                </div>
+                <button 
+                  onClick={() => { setIsProcessingPayment(true); setTimeout(() => { setBalance(prev => prev + paymentAmount); setIsProcessingPayment(false); setView('LOBBY'); }, 1500); }}
+                  className="w-full bg-white text-black font-black py-5 rounded-xl uppercase tracking-widest transition-all italic text-sm"
+                >
+                  {isProcessingPayment ? 'Syncing...' : 'Authorize Transfer'}
+                </button>
+              </div>
             </motion.div>
           )}
 
           {currentView === 'ADMIN' && (
-            <motion.div 
-              key="admin"
-              variants={pageVariants}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="max-w-2xl mx-auto space-y-12"
-            >
-              <div className="text-center space-y-4">
-                <h2 className="text-6xl font-black font-rajdhani text-white uppercase italic tracking-tighter drop-shadow-2xl">ROOT ACCESS</h2>
-                <div className="bg-red-600/10 px-8 py-3 rounded-full border border-red-600/30 inline-flex items-center gap-4">
-                  <div className="w-2 h-2 bg-red-600 rounded-full animate-ping"></div>
-                  <p className="text-red-500 font-bold text-[11px] tracking-[0.6em] uppercase">Authorized Personnel Only</p>
-                </div>
-              </div>
-
+            <motion.div key="admin" variants={pageVariants} initial="initial" animate="animate" exit="exit" className="max-w-md mx-auto">
               {!isAdminAuth ? (
-                <div className="bg-[#1a0b2e] border-2 border-pink-500/10 rounded-[4rem] p-16 shadow-3xl relative overflow-hidden backdrop-blur-md">
-                  <div className="absolute top-0 left-0 w-40 h-40 bg-pink-600/5 blur-[80px]"></div>
-                  <div className="space-y-12">
-                    <div className="space-y-6">
-                      <label className="block text-[12px] font-black text-pink-500 uppercase tracking-[0.5em] italic">Neural Encryption Key</label>
-                      <input 
-                        type="password" 
-                        value={passwordInput}
-                        onChange={(e) => setPasswordInput(e.target.value)}
-                        className="w-full bg-[#05020a] border-2 border-pink-500/10 rounded-3xl p-8 text-white font-rajdhani text-4xl outline-none focus:border-pink-500 transition-all placeholder:text-slate-900 shadow-inner tracking-[0.2em]"
-                        placeholder="••••••••"
-                      />
-                    </div>
-                    <button 
-                      onClick={handleAdminAuth}
-                      className="w-full bg-gradient-to-r from-pink-600 to-purple-800 hover:from-pink-500 hover:to-purple-700 text-white font-black py-8 rounded-3xl uppercase tracking-[0.5em] shadow-2xl shadow-pink-900/50 active:scale-95 transition-all italic text-base border-t border-pink-400/20"
-                    >
-                      ESTABLISH UPLINK
-                    </button>
-                  </div>
+                <div className="bg-[#0a0515] border border-white/5 rounded-3xl p-8 text-center">
+                  <h2 className="text-2xl font-black font-rajdhani text-white mb-6 uppercase">ROOT ACCESS</h2>
+                  <input type="password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} className="w-full bg-black border border-white/10 rounded-xl p-4 text-white mb-6" placeholder="Admin Key" />
+                  <button onClick={() => passwordInput === ADMIN_KEY && setIsAdminAuth(true)} className="w-full bg-pink-600 text-white font-black py-4 rounded-xl">Unlock</button>
                 </div>
               ) : (
-                <div className="bg-[#1a0b2e] border-2 border-green-600/30 rounded-[4rem] p-16 shadow-3xl space-y-16 relative overflow-hidden backdrop-blur-md">
-                   <div className="absolute top-0 right-0 w-80 h-80 bg-green-600 opacity-5 blur-[120px] rounded-full"></div>
-                  <div className="flex items-center justify-between border-b border-white/5 pb-12">
-                    <h3 className="text-4xl font-black text-white font-rajdhani italic tracking-tighter uppercase drop-shadow-md">ADMIN OVERRIDE</h3>
-                    <div className="bg-green-600/10 px-8 py-3 rounded-full border border-green-600/50 flex items-center gap-3">
-                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                      <span className="text-green-500 text-[11px] font-black uppercase tracking-[0.4em]">ROOT STABLE</span>
-                    </div>
-                  </div>
-
-                  <div className="space-y-12">
-                    <div className="space-y-6">
-                      <label className="block text-[12px] font-black text-slate-500 uppercase tracking-[0.5em] italic">Force Balance Injection</label>
-                      <div className="relative">
-                        <span className="absolute left-10 top-1/2 -translate-y-1/2 text-yellow-500 font-black text-4xl italic">$</span>
-                        <input 
-                          type="number" 
-                          value={adminBalanceInput}
-                          onChange={(e) => setAdminBalanceInput(e.target.value)}
-                          className="w-full bg-[#05020a] border-2 border-white/5 rounded-3xl p-10 pl-20 text-white font-rajdhani text-6xl outline-none focus:border-green-500 transition-all font-black shadow-inner tracking-tighter"
-                          placeholder="0.00"
-                        />
-                      </div>
-                    </div>
-                    <button 
-                      onClick={handleSetBalance}
-                      className="w-full bg-green-600 hover:bg-green-500 text-white font-black py-9 rounded-[2.5rem] uppercase tracking-[0.5em] shadow-3xl shadow-green-900/50 active:scale-95 transition-all italic text-base border-t-2 border-white/20"
-                    >
-                      COMMIT DATA OVERRIDE
-                    </button>
-                  </div>
-
-                  <button 
-                    onClick={() => setIsAdminAuth(false)}
-                    className="w-full text-slate-700 hover:text-slate-400 text-[12px] font-black uppercase tracking-[1em] transition-all italic group"
-                  >
-                    Disconnect <span className="text-red-900/50 group-hover:text-red-600 transition-colors">ROOT-LEVEL Sync</span>
-                  </button>
+                <div className="bg-[#0a0515] border border-white/5 rounded-3xl p-8 space-y-6">
+                  <input type="number" value={adminBalanceInput} onChange={e => setAdminBalanceInput(e.target.value)} className="w-full bg-black border border-white/10 rounded-xl p-4 text-white text-3xl font-black" placeholder="Set Balance" />
+                  <button onClick={() => { setBalance(parseFloat(adminBalanceInput)); setIsAdminAuth(false); }} className="w-full bg-green-600 text-white font-black py-4 rounded-xl">Confirm Override</button>
                 </div>
               )}
             </motion.div>
@@ -775,19 +309,8 @@ const App: React.FC = () => {
         </AnimatePresence>
       </main>
 
-      <footer className="py-28 bg-[#020105] border-t border-pink-500/5 mt-40 relative overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 text-center relative z-10">
-          <motion.div 
-             whileHover={{ scale: 1.1, rotate: 5 }}
-             className="w-24 h-24 rounded-full border-2 border-pink-500/20 mx-auto mb-12 opacity-30 grayscale overflow-hidden group-hover:grayscale-0 group-hover:opacity-100 transition-all duration-700 cursor-crosshair shadow-2xl"
-          >
-            <img src={MASCOT_URL} className="w-full h-full object-cover" />
-          </motion.div>
-          <h4 className="text-3xl font-black font-rajdhani text-white/15 mb-6 tracking-[0.4em] italic uppercase drop-shadow-sm">Devourer Management Systems</h4>
-          <p className="text-slate-900 text-[12px] font-black uppercase tracking-[1.2em] font-rajdhani">© 2024 DEVOUREROFCASE | THE NEURAL REIGN</p>
-        </div>
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-pink-600/40 to-transparent"></div>
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-4xl h-[1px] bg-gradient-to-r from-transparent via-pink-500/20 to-transparent"></div>
+      <footer className="py-20 bg-black/50 border-t border-white/5 mt-20 text-center">
+          <p className="text-slate-800 text-[9px] font-black uppercase tracking-[1em] font-rajdhani">© 2024 DEVOUREROFCASE | VAULT MANAGEMENT</p>
       </footer>
     </div>
   );
