@@ -8,7 +8,20 @@ import CaseOpener from './components/CaseOpener';
 import { getLuckAnalysis } from './services/geminiService';
 import { sounds } from './services/soundService';
 
-const ADMIN_PASSWORD = "devourer123";
+// Konfigurasi internal
+const ADMIN_KEY = "devourer123";
+const STORAGE_KEYS = {
+  USER: 'devourer_session',
+  INVENTORY: 'devourer_inventory'
+};
+
+const RARITY_ORDER: Record<Rarity, number> = {
+  [Rarity.GOLD]: 5,
+  [Rarity.COVERT]: 4,
+  [Rarity.CLASSIFIED]: 3,
+  [Rarity.RESTRICTED]: 2,
+  [Rarity.MIL_SPEC]: 1,
+};
 
 const pageVariants = {
   initial: { opacity: 0, y: 15, filter: 'blur(10px)' },
@@ -17,16 +30,21 @@ const pageVariants = {
 };
 
 const App: React.FC = () => {
-  // Auth States
+  // Auth & Session Persistence
   const [user, setUser] = useState<User | null>(() => {
-    const saved = localStorage.getItem('devourer_session');
+    const saved = localStorage.getItem(STORAGE_KEYS.USER);
     return saved ? JSON.parse(saved) : null;
   });
+
+  const [inventory, setInventory] = useState<InventoryItem[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.INVENTORY);
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [authMode, setAuthMode] = useState<'LOGIN' | 'SIGNUP'>('LOGIN');
   const [authForm, setAuthForm] = useState({ email: '', username: '', password: '' });
   
   const [balance, setBalance] = useState<number>(user ? user.balance : 0);
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [currentView, setView] = useState<View>(user ? 'LOBBY' : 'AUTH');
   const [activeCase, setActiveCase] = useState<Case | null>(null);
   const [caseSessionId, setCaseSessionId] = useState(0);
@@ -47,16 +65,19 @@ const App: React.FC = () => {
   const [cases] = useState<Case[]>(INITIAL_CASES);
   const [skins] = useState<Skin[]>(INITIAL_SKINS);
 
-  // The iconic cyberpunk mascot image URL
   const MASCOT_URL = "https://image2url.com/r2/default/images/1770034854711-60d7c45b-78b0-45d4-9f36-3773406af894.jpeg";
 
-  // Sync balance to storage
+  // Sync session & inventory to storage
   useEffect(() => {
     if (user) {
       const updatedUser = { ...user, balance };
-      localStorage.setItem('devourer_session', JSON.stringify(updatedUser));
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
     }
   }, [balance, user]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inventory));
+  }, [inventory]);
 
   const handleNavigate = (v: View) => {
     if (!user && v !== 'AUTH') {
@@ -71,23 +92,32 @@ const App: React.FC = () => {
     e.preventDefault();
     sounds.playWin();
     
-    // Simulate auth logic
-    const newUser: User = {
-      username: authForm.username || authForm.email.split('@')[0],
-      email: authForm.email,
-      balance: authMode === 'SIGNUP' ? 50.00 : balance, // Give new users $50
-    };
+    // Check if user exists for login mode
+    const existingSession = localStorage.getItem(STORAGE_KEYS.USER);
+    const existingData = existingSession ? JSON.parse(existingSession) : null;
+
+    let newUser: User;
+    if (authMode === 'LOGIN' && existingData && existingData.email === authForm.email) {
+      newUser = existingData;
+      setBalance(existingData.balance);
+    } else {
+      newUser = {
+        username: authForm.username || authForm.email.split('@')[0],
+        email: authForm.email,
+        balance: authMode === 'SIGNUP' ? 50.00 : 0,
+      };
+      if (authMode === 'SIGNUP') setBalance(50.00);
+    }
 
     setUser(newUser);
-    if (authMode === 'SIGNUP') setBalance(50.00);
-    localStorage.setItem('devourer_session', JSON.stringify(newUser));
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(newUser));
     setView('LOBBY');
   };
 
   const handleLogout = () => {
     sounds.playTick();
     setUser(null);
-    localStorage.removeItem('devourer_session');
+    localStorage.removeItem(STORAGE_KEYS.USER);
     setView('AUTH');
   };
 
@@ -100,7 +130,6 @@ const App: React.FC = () => {
       setView('CASE_OPEN');
     } else {
       sounds.playTick();
-      alert("Insufficient funds! Please top up.");
       handleNavigate('PAYMENT');
     }
   };
@@ -110,17 +139,15 @@ const App: React.FC = () => {
       sounds.playWin();
       setBalance(prev => Math.max(0, prev - skin.price));
       handleWinItem(skin);
-      alert(`Asset Secured: ${skin.weapon} | ${skin.name}`);
     } else {
       sounds.playTick();
-      alert("Insufficient funds!");
     }
   };
 
   const handleWinItem = (skin: Skin) => {
     const newItem: InventoryItem = {
       ...skin,
-      instanceId: Math.random().toString(36).substr(2, 9),
+      instanceId: crypto.randomUUID(),
       acquiredAt: Date.now(),
     };
     setInventory(prev => [newItem, ...prev]);
@@ -142,19 +169,17 @@ const App: React.FC = () => {
     const items = [...inventory];
     if (inventorySort === 'PRICE') return items.sort((a, b) => b.price - a.price);
     if (inventorySort === 'RARITY') {
-        const order = Object.values(Rarity);
-        return items.sort((a, b) => order.indexOf(b.rarity) - order.indexOf(a.rarity));
+        return items.sort((a, b) => RARITY_ORDER[b.rarity] - RARITY_ORDER[a.rarity]);
     }
     return items.sort((a, b) => b.acquiredAt - a.acquiredAt);
   }, [inventory, inventorySort]);
 
   const handleAdminAuth = () => {
-    if (passwordInput === ADMIN_PASSWORD) {
+    if (passwordInput === ADMIN_KEY) {
       setIsAdminAuth(true);
       sounds.playWin();
     } else {
       sounds.playTick();
-      alert("Access Denied: Incorrect Root Key");
     }
   };
 
@@ -163,9 +188,6 @@ const App: React.FC = () => {
     if (!isNaN(newBalance)) {
       setBalance(newBalance);
       sounds.playWin();
-      alert(`Root Override: Core Balance set to $${newBalance.toFixed(2)}`);
-    } else {
-      alert("Invalid numeric input.");
     }
   };
 
@@ -178,9 +200,23 @@ const App: React.FC = () => {
       setBalance(prev => prev + paymentAmount);
       setIsProcessingPayment(false);
       sounds.playWin();
-      alert(`Protocol Success: $${paymentAmount.toFixed(2)} synchronized via ${selectedProvider}.`);
       handleNavigate('LOBBY');
     }, 1800);
+  };
+
+  const handleRunAiSync = async () => {
+    if (isAiLoading) return;
+    setIsAiLoading(true);
+    sounds.playTick();
+    try {
+      const res = await getLuckAnalysis(inventory); 
+      setAiResponse(res); 
+      sounds.playWin();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsAiLoading(false);
+    }
   };
 
   return (
@@ -494,14 +530,7 @@ const App: React.FC = () => {
                     </div>
 
                     <button 
-                      onClick={async () => { 
-                        sounds.playTick(); 
-                        setIsAiLoading(true); 
-                        const res = await getLuckAnalysis(inventory); 
-                        setAiResponse(res); 
-                        sounds.playWin(); 
-                        setIsAiLoading(false); 
-                      }} 
+                      onClick={handleRunAiSync} 
                       disabled={isAiLoading} 
                       className="w-full bg-white text-black font-black py-8 rounded-[2.5rem] hover:bg-pink-600 hover:text-white disabled:opacity-50 transition-all uppercase tracking-[0.5em] italic text-base shadow-[0_0_40px_rgba(255,255,255,0.2)] hover:shadow-pink-600/60 active:scale-95 border-t-2 border-white/30"
                     >

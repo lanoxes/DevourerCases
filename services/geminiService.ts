@@ -1,10 +1,9 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { InventoryItem } from "../types";
 
 export const getLuckAnalysis = async (inventory: InventoryItem[]) => {
   // Creating a new instance right before call ensures we use the most up-to-date API key
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   const inventoryDesc = inventory
     .map(i => `${i.weapon} | ${i.name} (${i.rarity})`)

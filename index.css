@@ -1,0 +1,67 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-midnight text-slate-50 overflow-x-hidden;
+    font-family: 'Inter', sans-serif;
+    letter-spacing: -0.01em;
+  }
+  
+  h1, h2, h3, h4, h5, h6, .font-rajdhani {
+    font-family: 'Rajdhani', sans-serif;
+  }
+}
+
+@layer components {
+  .logo-gradient {
+    background: linear-gradient(135deg, #f472b6, #db2777, #9333ea, #6366f1);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-size: 200% 200%;
+    animation: gradient-flow 5s ease infinite;
+  }
+
+  @keyframes gradient-flow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .backdrop-blur-xl {
+    backdrop-filter: blur(24px) saturate(180%);
+  }
+
+  .animate-bounce-short {
+    animation: bounce-short 1s ease-in-out infinite;
+  }
+
+  @keyframes bounce-short {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #05020a;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #2d1b4d, #ec4899);
+  border-radius: 5px;
+  border: 2px solid #05020a;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #ec4899;
+}
+
+input[type=number]::-webkit-inner-spin-button, 
+input[type=number]::-webkit-outer-spin-button { 
+    -webkit-appearance: none; 
+    margin: 0; 
+}
